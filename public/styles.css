@@ -1,0 +1,28 @@
+/* Responsive + Dark Mode Styles */
+
+@media (max-width: 480px) {
+  .cloudflare-screen { padding: 24px 16px !important; }
+  .cf-title { font-size: 18px !important; }
+  .cf-subtitle { font-size: 14px !important; }
+  .cf-logo svg { width: 56px !important; height: 56px !important; }
+}
+
+@media (min-width: 481px) and (max-width: 768px) {
+  .cloudflare-screen { padding: 32px 20px !important; }
+}
+
+@media (prefers-color-scheme: dark) {
+  body, .container { background: #1a1a2e !important; }
+  .cf-title { color: #e0e0e0 !important; }
+  .cf-subtitle, .cf-progress { color: #a0a0a0 !important; }
+  .cf-footer { color: #666 !important; border-top-color: #333 !important; }
+  .cf-ray-id { background: #2a2a3e !important; color: #ccc !important; }
+  .cf-spinner { border-color: #2a2a3e !important; border-top-color: #f4811e !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cf-spinner { animation-duration: 2s !important; }
+  .cloudflare-screen { animation: none !important; }
+}
+
+@media print { .cloudflare-screen { display: none !important; } }
