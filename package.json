@@ -1,0 +1,17 @@
+{
+  "name": "telegram-capture",
+  "version": "1.0.0",
+  "description": "Authorized security testing tool — Telegram-based camera capture",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "form-data": "^4.0.1",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}
